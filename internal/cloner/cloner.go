@@ -211,37 +211,42 @@ func WritePreferences(srcProfile, dstProfile, displayName string) error {
 			delete(profileMap, k)
 		}
 
-		// Patch extensions.settings — keep only copied, enabled extensions.
+		// Build extension settings from Secure Preferences (authoritative source)
+		// cross-referenced against extensions actually copied to dstProfile.
+		// Preferences.extensions.settings is always empty in modern Chrome —
+		// Chrome only writes extension state to Secure Preferences (HMAC-protected).
+		// We read from Secure Preferences but write the filtered result into
+		// Preferences only (since we can't produce valid HMACs for Secure Preferences).
 		extMap := getOrCreateMapIn(prefs, "extensions")
-		if rawSettings, ok := extMap["settings"].(map[string]interface{}); ok {
-			filtered := make(map[string]interface{}, len(copiedIDs))
-			for id, v := range rawSettings {
-				if _, copied := copiedIDs[id]; !copied {
-					continue
+		filtered := make(map[string]interface{}, len(copiedIDs))
+		if secRaw, err := os.ReadFile(filepath.Join(srcProfile, "Secure Preferences")); err == nil {
+			var secPrefs map[string]interface{}
+			if json.Unmarshal(secRaw, &secPrefs) == nil {
+				if secExt, ok := secPrefs["extensions"].(map[string]interface{}); ok {
+					if secSettings, ok := secExt["settings"].(map[string]interface{}); ok {
+						for id, v := range secSettings {
+							// Only include extensions whose directory was copied.
+							if _, copied := copiedIDs[id]; !copied {
+								continue
+							}
+							entry, ok := v.(map[string]interface{})
+							if !ok {
+								continue
+							}
+							// Skip disabled extensions.
+							if state, ok := entry["state"].(float64); ok && state == 0 {
+								continue
+							}
+							if dr, ok := entry["disable_reasons"].([]interface{}); ok && len(dr) > 0 {
+								continue
+							}
+							filtered[id] = entry
+						}
+					}
 				}
-				entry, ok := v.(map[string]interface{})
-				if !ok {
-					filtered[id] = v
-					continue
-				}
-
-				// Skip explicitly disabled extensions (state==0 or disable_reasons set).
-				stateZero := false
-				if state, ok := entry["state"].(float64); ok && state == 0 {
-					stateZero = true
-				}
-				hasDisableReasons := false
-				if dr, ok := entry["disable_reasons"].([]interface{}); ok && len(dr) > 0 {
-					hasDisableReasons = true
-				}
-				if stateZero || hasDisableReasons {
-					continue
-				}
-
-				filtered[id] = entry
 			}
-			extMap["settings"] = filtered
 		}
+		extMap["settings"] = filtered
 
 		out, err := json.MarshalIndent(prefs, "", "  ")
 		if err != nil {

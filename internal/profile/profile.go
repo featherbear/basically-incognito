@@ -150,7 +150,7 @@ func SourceMeta(ls *LocalState, dirName string) profileMetaJSON {
 // also removes it from last_active_profiles if present.
 // The write is performed atomically under an advisory file lock so it is safe
 // to call while Chrome is running.
-// It does NOT delete the directory on disk — the caller is responsible for that.
+// It does NOT delete the directory on disk - the caller is responsible for that.
 func UnregisterProfile(userDataDir, dirName string) error {
 	return modifyLocalState(userDataDir, func(state map[string]interface{}) error {
 		profileMap, ok := state["profile"].(map[string]interface{})

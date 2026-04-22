@@ -20,30 +20,30 @@ func cloneDir(src, dst string) error {
 		return err
 	}
 
-	// CLONE_NOOWNERCOPY = 0x0002 — don't copy ownership (we want our own uid)
+	// CLONE_NOOWNERCOPY = 0x0002 - don't copy ownership (we want our own uid)
 	const CLONE_NOOWNERCOPY = 0x0002
 	// SYS_clonefileat = 462 on macOS arm64/amd64
 	const SYS_clonefileat = 462
 
 	srcFd, err := os.Open(filepath.Dir(src))
 	if err != nil {
-		return fallbackCloneDir(src, dst)
+		return copyDir(src, dst)
 	}
 	defer srcFd.Close()
 
 	dstFd, err := os.Open(filepath.Dir(dst))
 	if err != nil {
-		return fallbackCloneDir(src, dst)
+		return copyDir(src, dst)
 	}
 	defer dstFd.Close()
 
 	srcName, err := unix.BytePtrFromString(filepath.Base(src))
 	if err != nil {
-		return fallbackCloneDir(src, dst)
+		return copyDir(src, dst)
 	}
 	dstName, err := unix.BytePtrFromString(filepath.Base(dst))
 	if err != nil {
-		return fallbackCloneDir(src, dst)
+		return copyDir(src, dst)
 	}
 
 	_, _, errno := unix.Syscall6(
@@ -62,13 +62,9 @@ func cloneDir(src, dst string) error {
 	// ENOTSUP = filesystem doesn't support clonefileat (e.g. HFS+, network fs)
 	// EXDEV   = cross-device clone not supported
 	if errno == unix.ENOTSUP || errno == unix.EXDEV || errno == unix.ENOSYS {
-		return fallbackCloneDir(src, dst)
+		return copyDir(src, dst)
 	}
 	return fmt.Errorf("clonefileat %s → %s: %w", src, dst, errno)
-}
-
-func fallbackCloneDir(src, dst string) error {
-	return copyDir(src, dst)
 }
 
 // removeVerifiedContents walks dst and removes any verified_contents.json

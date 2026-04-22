@@ -8,13 +8,13 @@
 //  2. Re-read the file under the lock (so we see Chrome's latest version).
 //  3. Modify the in-memory representation.
 //  4. Write to a sibling temp file, then rename it over the original
-//     (atomic on all platforms we care about — POSIX rename(2) and
+//     (atomic on all platforms we care about - POSIX rename(2) and
 //     Windows MoveFileExW with MOVEFILE_REPLACE_EXISTING).
 //  5. Release the lock.
 //
 // Note: Chrome itself does NOT use advisory locks on Local State, so this
 // lock only protects against concurrent runs of this tool. The atomic rename
-// in step 4 is the primary safety mechanism against Chrome — if Chrome
+// in step 4 is the primary safety mechanism against Chrome - if Chrome
 // writes Local State between our lock acquisition and our rename, our rename
 // wins, but we have re-read under the lock so our copy is based on the
 // freshest version we could have seen.  The worst case is a benign race where
@@ -41,7 +41,7 @@ func modifyLocalState(userDataDir string, fn func(state map[string]interface{}) 
 	}
 	defer f.Close()
 
-	// Acquire exclusive advisory lock — blocks until Chrome or another
+	// Acquire exclusive advisory lock - blocks until Chrome or another
 	// instance of this tool releases it.
 	if err := lockFile(f); err != nil {
 		return fmt.Errorf("lock Local State: %w", err)
@@ -78,17 +78,20 @@ func modifyLocalState(userDataDir string, fn func(state map[string]interface{}) 
 
 	if _, err := tmp.Write(out); err != nil {
 		tmp.Close()
-		os.Remove(tmpName)
+		os.Remove(tmpName) //nolint:errcheck
 		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		os.Remove(tmpName)
+		os.Remove(tmpName) //nolint:errcheck
 		return fmt.Errorf("sync temp file: %w", err)
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName) //nolint:errcheck
+		return fmt.Errorf("close temp file: %w", err)
+	}
 
-	// Atomic replace — on POSIX this is rename(2); on Windows we use
+	// Atomic replace - on POSIX this is rename(2); on Windows we use
 	// os.Rename which maps to MoveFileExW(MOVEFILE_REPLACE_EXISTING) in Go's
 	// stdlib since Go 1.5.
 	if err := os.Rename(tmpName, path); err != nil {

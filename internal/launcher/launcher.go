@@ -57,12 +57,12 @@ func FindExecutable(browserName string) (string, error) {
 
 	for _, c := range candidates {
 		if filepath.IsAbs(c) {
-			// Absolute path — check existence directly.
+			// Absolute path - check existence directly.
 			if _, err := os.Stat(c); err == nil {
 				return c, nil
 			}
 		} else {
-			// Bare name — search PATH.
+			// Bare name - search PATH.
 			if path, err := exec.LookPath(c); err == nil {
 				return path, nil
 			}
@@ -105,7 +105,7 @@ func Launch(executablePath, userDataDir, profileDirName string, extraArgs []stri
 	// Inherit the current environment so the browser can find its libraries.
 	cmd.Env = os.Environ()
 
-	// Detach stdout/stderr from our terminal — the browser has its own window.
+	// Detach stdout/stderr from our terminal - the browser has its own window.
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 

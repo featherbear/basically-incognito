@@ -14,7 +14,7 @@ func lockFile(f *os.File) error {
 	var ol windows.Overlapped
 	return windows.LockFileEx(
 		windows.Handle(f.Fd()),
-		windows.LOCKFILE_EXCLUSIVE_LOCK, // flags — blocking exclusive
+		windows.LOCKFILE_EXCLUSIVE_LOCK, // flags - blocking exclusive
 		0,                               // reserved
 		1, 0,                            // nNumberOfBytesToLockLow / High
 		&ol,

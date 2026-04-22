@@ -1,8 +1,4 @@
-# chrome-profile-cloner justfile
-# Requires: just (https://github.com/casey/just)
-
 app     := "chrome-profile-cloner"
-module  := "github.com/user/chrome-profile-cloner"
 cmd     := "cmd/" + app
 outdir  := "dist"
 

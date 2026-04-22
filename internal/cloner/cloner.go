@@ -3,7 +3,7 @@
 //
 // Only three categories are copied:
 //   - Bookmarks  (Bookmarks JSON file)
-//   - History    (History, Favicons, Top Sites — SQLite)
+//   - History    (History, Favicons, Top Sites - SQLite)
 //   - Extensions (Extensions/ directory, enabled extensions only)
 //
 // SQLite database files are copied using "VACUUM INTO" via the sqlitecopy
@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -25,78 +26,86 @@ import (
 	"github.com/user/chrome-profile-cloner/internal/sqlitecopy"
 )
 
-// excludedNames is the set of file/directory names that must NEVER be copied,
+// excludedList enumerates file/directory names that must NEVER be copied,
 // regardless of how they are encountered during a directory walk.
 // _metadata/ is excluded because verified_contents.json inside it is
 // cryptographically tied to the source profile path. Copying it to a new
 // profile causes Chrome to fail the integrity check and show "extension failed
 // to load properly". Chrome regenerates _metadata/ on first use.
-var excludedNames = map[string]struct{}{
+var excludedList = []string{
 	// Cookies
-	"Cookies":         {},
-	"Cookies-journal": {},
+	"Cookies",
+	"Cookies-journal",
 
 	// Passwords
-	"Login Data":                     {},
-	"Login Data-journal":             {},
-	"Login Data For Account":         {},
-	"Login Data For Account-journal": {},
+	"Login Data",
+	"Login Data-journal",
+	"Login Data For Account",
+	"Login Data For Account-journal",
 
 	// Cache
-	"Cache":      {},
-	"Code Cache": {},
-	"GPUCache":   {},
-	"ShaderCache": {},
+	"Cache",
+	"Code Cache",
+	"GPUCache",
+	"ShaderCache",
 
 	// Session / tab restore
-	"Current Session": {},
-	"Current Tabs":    {},
-	"Last Session":    {},
-	"Last Tabs":       {},
+	"Current Session",
+	"Current Tabs",
+	"Last Session",
+	"Last Tabs",
 
 	// Sync
-	"Sync Data":               {},
-	"Sync Extension Settings": {},
-	"SyncData.sqlite3":        {},
-
+	"Sync Data",
+	"Sync Extension Settings",
+	"SyncData.sqlite3",
 
 	// Lock files
-	"SingletonLock":   {},
-	"SingletonSocket": {},
-	"SingletonCookie": {},
+	"SingletonLock",
+	"SingletonSocket",
+	"SingletonCookie",
 
-	// Extension settings / state — session and identity-specific
-	"Local Extension Settings": {},
-	"Extension Rules":          {},
-	"Extension Scripts":        {},
-	"Extension State":          {},
+	// Extension settings / state - session and identity-specific
+	"Local Extension Settings",
+	"Extension Rules",
+	"Extension Scripts",
+	"Extension State",
 
-	// Favicons / Top Sites — not copied
-	"Favicons":          {},
-	"Favicons-journal":  {},
-	"Top Sites":         {},
-	"Top Sites-journal": {},
+	// Favicons / Top Sites - not copied
+	"Favicons",
+	"Favicons-journal",
+	"Top Sites",
+	"Top Sites-journal",
 
 	// Autofill / search engines
-	"Web Data":         {},
-	"Web Data-journal": {},
+	"Web Data",
+	"Web Data-journal",
 
-	// Network directory — cookies, trust tokens, transport security
-	"Network": {},
+	// Network directory - cookies, trust tokens, transport security
+	"Network",
 
 	// Misc transient / site-specific storage
-	"Network Action Predictor":         {},
-	"Network Action Predictor-journal": {},
-	"QuotaManager":                     {},
-	"QuotaManager-journal":             {},
-	"databases":                        {},
-	"IndexedDB":                        {},
-	"Service Worker":                   {},
-	"blob_storage":                     {},
-	"shared_proto_db":                  {},
-	"GCM Store":                        {},
-	"data_reduction_proxy_leveldb":     {},
+	"Network Action Predictor",
+	"Network Action Predictor-journal",
+	"QuotaManager",
+	"QuotaManager-journal",
+	"databases",
+	"IndexedDB",
+	"Service Worker",
+	"blob_storage",
+	"shared_proto_db",
+	"GCM Store",
+	"data_reduction_proxy_leveldb",
 }
+
+// excludedNames is a set built from excludedList for O(1) lookup during directory walks.
+var excludedNames = func() map[string]struct{} {
+	s := make(map[string]struct{}, len(excludedList))
+	for _, n := range excludedList {
+		s[n] = struct{}{}
+	}
+	return s
+}()
 
 // Options controls the behaviour of Clone.
 type Options struct {
@@ -108,10 +117,10 @@ type Options struct {
 
 // Result summarises what was (or would be) done.
 type Result struct {
-	ItemsCopied          int
-	ItemsSkipped         int
-	ExtensionsCopied     int
-	ExtensionsSkipped    int
+	ItemsCopied       int
+	ItemsSkipped      int
+	ExtensionsCopied  int
+	ExtensionsSkipped int
 }
 
 // WritePreferences writes both Preferences and Secure Preferences into
@@ -124,11 +133,11 @@ type Result struct {
 // on first launch. Both files are written because Chrome cross-checks them.
 //
 // opts is used to determine which categories were cloned so that the
-// Preferences file is patched consistently — e.g. when NoExtensions is set,
+// Preferences file is patched consistently - e.g. when NoExtensions is set,
 // extensions.settings is written as an empty map without scanning the disk.
 func WritePreferences(srcProfile, dstProfile, displayName string, opts Options) error {
 	// Collect the IDs of extensions that were actually copied to dstProfile.
-	// When NoExtensions is set we skip the disk scan — copiedIDs stays empty,
+	// When NoExtensions is set we skip the disk scan - copiedIDs stays empty,
 	// which causes extensions.settings to be written as {} below.
 	copiedIDs := map[string]struct{}{}
 	if !opts.NoExtensions {
@@ -184,7 +193,7 @@ func WritePreferences(srcProfile, dstProfile, displayName string, opts Options) 
 		}
 
 		// Patch profile sub-keys: set name, strip avatar and identity fields.
-		profileMap := getOrCreateMapIn(prefs, "profile")
+		profileMap := getOrCreateMap(prefs, "profile")
 		profileMap["name"] = displayName
 		// Force a clean exit type so Chrome doesn't show the "didn't shut down
 		// correctly" restore banner on first launch of the cloned profile.
@@ -192,20 +201,20 @@ func WritePreferences(srcProfile, dstProfile, displayName string, opts Options) 
 		profileMap["exited_cleanly"] = true
 
 		// Set a dark monochromatic theme so the cloned profile is visually distinct.
-		// We only write color_scheme2 (dark mode) — the safest minimal change.
+		// We only write color_scheme2 (dark mode) - the safest minimal change.
 		// Avoid writing color_variant2/user_color2 as unsupported values can crash Chrome.
-		browserMap := getOrCreateMapIn(prefs, "browser")
+		browserMap := getOrCreateMap(prefs, "browser")
 		existingTheme, _ := browserMap["theme"].(map[string]interface{})
 		if existingTheme == nil {
 			existingTheme = map[string]interface{}{}
 		}
-		existingTheme["color_scheme2"] = 2         // dark mode
+		existingTheme["color_scheme2"] = 2 // dark mode
 		existingTheme["follows_system_colors"] = false
-		delete(existingTheme, "saved_local_theme")   // clear proto-encoded theme
+		delete(existingTheme, "saved_local_theme") // clear proto-encoded theme
 		browserMap["theme"] = existingTheme
 
 		// Clear any extension-based theme so it doesn't override ours.
-		extMap2 := getOrCreateMapIn(prefs, "extensions")
+		extMap2 := getOrCreateMap(prefs, "extensions")
 		delete(extMap2, "theme")
 		profileSubStrip := []string{
 			"avatar_index",
@@ -224,11 +233,11 @@ func WritePreferences(srcProfile, dstProfile, displayName string, opts Options) 
 
 		// Build extension settings from Secure Preferences (authoritative source)
 		// cross-referenced against extensions actually copied to dstProfile.
-		// Preferences.extensions.settings is always empty in modern Chrome —
+		// Preferences.extensions.settings is always empty in modern Chrome -
 		// Chrome only writes extension state to Secure Preferences (HMAC-protected).
 		// We read from Secure Preferences but write the filtered result into
 		// Preferences only (since we can't produce valid HMACs for Secure Preferences).
-		extMap := getOrCreateMapIn(prefs, "extensions")
+		extMap := getOrCreateMap(prefs, "extensions")
 		filtered := make(map[string]interface{}, len(copiedIDs))
 		if secRaw, err := os.ReadFile(filepath.Join(srcProfile, "Secure Preferences")); err == nil {
 			var secPrefs map[string]interface{}
@@ -273,7 +282,7 @@ func WritePreferences(srcProfile, dstProfile, displayName string, opts Options) 
 	return nil
 }
 
-func getOrCreateMapIn(parent map[string]interface{}, key string) map[string]interface{} {
+func getOrCreateMap(parent map[string]interface{}, key string) map[string]interface{} {
 	if v, ok := parent[key]; ok {
 		if m, ok := v.(map[string]interface{}); ok {
 			return m
@@ -359,12 +368,7 @@ func ListExtensions(profileDir string) []ExtensionInfo {
 		})
 	}
 
-	// Sort by name for consistent output.
-	for i := 1; i < len(result); i++ {
-		for j := i; j > 0 && result[j].Name < result[j-1].Name; j-- {
-			result[j], result[j-1] = result[j-1], result[j]
-		}
-	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
 
@@ -447,6 +451,15 @@ func resolveExtensionNameAndVersion(profileDir, id string) (name, version string
 	return id, ""
 }
 
+// logSkip prints a consistent skip message for both dry-run and real runs.
+func logSkip(dryRun bool, item, flag string) {
+	if dryRun {
+		fmt.Printf("  [dry-run] skipping %s (%s)\n", item, flag)
+	} else {
+		fmt.Printf("  Skipped: %s (%s)\n", item, flag)
+	}
+}
+
 // Clone copies bookmarks, history, and enabled extensions from srcProfile
 // into dstProfile.
 func Clone(srcProfile, dstProfile string, opts Options) (Result, error) {
@@ -460,39 +473,27 @@ func Clone(srcProfile, dstProfile string, opts Options) (Result, error) {
 
 	// ── 1. Bookmarks ─────────────────────────────────────────────────────────
 	if opts.NoBookmarks {
-		if opts.DryRun {
-			fmt.Println("  [dry-run] skipping Bookmarks (--no-bookmarks)")
-		} else {
-			fmt.Println("  Skipped: Bookmarks (--no-bookmarks)")
-		}
+		logSkip(opts.DryRun, "Bookmarks", "--no-bookmarks")
 		res.ItemsSkipped++
 	} else {
-		if err := copyItem(srcProfile, dstProfile, "Bookmarks", false, opts, &res); err != nil {
+		if err := copyItem(srcProfile, dstProfile, "Bookmarks", opts, &res); err != nil {
 			return res, err
 		}
 	}
 
-	// ── 2. History (SQLite — hot-copied via VACUUM INTO) ─────────────────────
+	// ── 2. History (SQLite - hot-copied via VACUUM INTO) ─────────────────────
 	if opts.NoHistory {
-		if opts.DryRun {
-			fmt.Println("  [dry-run] skipping History (--no-history)")
-		} else {
-			fmt.Println("  Skipped: History (--no-history)")
-		}
+		logSkip(opts.DryRun, "History", "--no-history")
 		res.ItemsSkipped++
 	} else {
-		if err := copyItem(srcProfile, dstProfile, "History", false, opts, &res); err != nil {
+		if err := copyItem(srcProfile, dstProfile, "History", opts, &res); err != nil {
 			return res, err
 		}
 	}
 
 	// ── 3. Extensions (enabled only) ─────────────────────────────────────────
 	if opts.NoExtensions {
-		if opts.DryRun {
-			fmt.Println("  [dry-run] skipping Extensions (--no-extensions)")
-		} else {
-			fmt.Println("  Skipped: Extensions (--no-extensions)")
-		}
+		logSkip(opts.DryRun, "Extensions", "--no-extensions")
 	} else {
 		extRes, err := copyEnabledExtensions(srcProfile, dstProfile, opts)
 		if err != nil {
@@ -506,7 +507,7 @@ func Clone(srcProfile, dstProfile string, opts Options) (Result, error) {
 }
 
 // copyItem copies a single named file or directory from src to dst profile.
-func copyItem(srcProfile, dstProfile, name string, isDir bool, opts Options, res *Result) error {
+func copyItem(srcProfile, dstProfile, name string, opts Options, res *Result) error {
 	src := filepath.Join(srcProfile, name)
 	dst := filepath.Join(dstProfile, name)
 
@@ -525,7 +526,7 @@ func copyItem(srcProfile, dstProfile, name string, isDir bool, opts Options, res
 	}
 
 	var copyErr error
-	if info.IsDir() || isDir {
+	if info.IsDir() {
 		copyErr = copyDir(src, dst)
 	} else {
 		copyErr = copyFile(src, dst)
@@ -554,7 +555,7 @@ type extensionEntry struct {
 	DisableReasons []int `json:"disable_reasons"`
 }
 
-// isEnabled returns true if the extension is enabled — i.e. state is not
+// isEnabled returns true if the extension is enabled - i.e. state is not
 // explicitly 0 AND disable_reasons is empty.
 func (e extensionEntry) isEnabled() bool {
 	if e.State != nil && *e.State == 0 {
@@ -581,7 +582,7 @@ type extensionSettings struct {
 // We try Preferences first; if its settings map is empty (Chrome may have
 // only written to Secure Preferences) we try Secure Preferences.
 //
-// If neither file exists or both are unreadable, we return nil — the caller
+// If neither file exists or both are unreadable, we return nil - the caller
 // will copy all extensions as a safe fallback.
 func enabledExtensionIDs(srcProfile string) (map[string]bool, error) {
 	settings, err := readExtensionSettings(filepath.Join(srcProfile, "Preferences"))
@@ -626,7 +627,7 @@ func readExtensionSettings(path string) (map[string]extensionEntry, error) {
 
 	var prefs extensionSettings
 	if err := json.Unmarshal(data, &prefs); err != nil {
-		// Malformed — treat as empty, caller will fall back.
+		// Malformed - treat as empty, caller will fall back.
 		return nil, nil
 	}
 	return prefs.Extensions.Settings, nil
@@ -709,7 +710,7 @@ func copyEnabledExtensions(srcProfile, dstProfile string, opts Options) (Result,
 	close(jobCh)
 
 	bar := progress.New(len(jobs), "Extensions")
-	bar.Inc() // draw initial state
+	bar.Draw() // render initial 0/N state
 
 	resultCh := make(chan result, len(jobs))
 	var wg sync.WaitGroup
@@ -766,7 +767,7 @@ func copyFile(src, dst string) error {
 
 // copyDir recursively copies the directory tree rooted at src to dst.
 // It skips any entry whose name appears in excludedNames.
-// Files inside directories are copied with copyFileRaw (no SQLite check) —
+// Files inside directories are copied with copyFileRaw (no SQLite check) -
 // extension directories contain only JS/CSS/JSON/HTML/PNG files, never SQLite.
 func copyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {

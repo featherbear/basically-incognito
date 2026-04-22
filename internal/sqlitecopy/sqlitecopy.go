@@ -44,7 +44,7 @@ func Copy(src, dst string) error {
 	}
 
 	// Open the source DB read-only and with immutable=1 so SQLite doesn't
-	// attempt to acquire any locks at all — safe even when Chrome holds an
+	// attempt to acquire any locks at all - safe even when Chrome holds an
 	// exclusive lock.
 	dsn := fmt.Sprintf("file:%s?mode=ro&immutable=1&_journal_mode=WAL", src)
 	db, err := sql.Open("sqlite", dsn)

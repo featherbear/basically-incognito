@@ -22,6 +22,11 @@ func New(total int, label string) *Bar {
 	return &Bar{total: total, label: label}
 }
 
+// Draw renders the bar at its current value without incrementing.
+func (b *Bar) Draw() {
+	b.draw()
+}
+
 // Inc increments the progress counter by 1 and redraws.
 func (b *Bar) Inc() {
 	b.current.Add(1)

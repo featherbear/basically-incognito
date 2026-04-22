@@ -1,0 +1,8 @@
+# Compiled binaries
+chrome-profile-cloner
+*.exe
+
+# Go test cache
+*.test
+*.out
+dist/

@@ -6,3 +6,4 @@ chrome-profile-cloner
 *.test
 *.out
 dist/
+.DS_Store

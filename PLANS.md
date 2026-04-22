@@ -15,38 +15,6 @@ session files, sync data, shadow history (`Visited Links`), SQLite journals.
 
 ---
 
-## Planned improvements
-
-### Testing
-- [ ] Unit tests for `internal/cloner` — extension filtering, `WritePreferences` patching,
-      `VACUUM INTO` hot-copy, `clonefileat` CoW path
-- [ ] Unit tests for `internal/profile` — `Local State` parsing, last-used detection,
-      `RegisterNewProfile`, `UnregisterProfile`, file locking
-- [ ] Unit tests for `internal/sqlitecopy` — `IsSQLite` detection, `VACUUM INTO` output
-- [ ] Integration test: full clone → verify file presence and Preferences correctness
-
-### CLI / UX
-- [ ] `--no-history` / `--no-extensions` flags for runtime control over what is copied
-- [ ] `--exclude-extension <id|name>` flag to skip specific extensions at clone time
-- [ ] Interactive profile picker (numbered menu) when no `--profile` is given
-- [ ] Shell completion for `--profile-name` values
-- [ ] `--theme` flag to choose clone colour (`dark-grey`, `light`, `system`)
-
-### Distribution
-- [ ] GitHub Actions CI pipeline: build + test on push
-- [ ] GitHub Actions release pipeline: cross-compile all 6 targets + checksums on tag
-- [ ] Homebrew tap formula
-- [ ] `just release` producing `.tar.gz` / `.zip` archives with checksums
-
-### Robustness
-- [ ] Poll until all Chrome child processes referencing the profile dir exit before
-      ephemeral cleanup (currently relies on main process exit only)
-- [ ] Handle Chromium snap/Flatpak paths on Linux automatically
-- [ ] Warn when source profile's `Secure Preferences` and `Preferences` disagree on
-      extension state (tamper-detection triggered)
-
----
-
 ## Known limitations
 
 ### Chrome server-side default extensions (e.g. Rovo)

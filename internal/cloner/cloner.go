@@ -100,7 +100,10 @@ var excludedNames = map[string]struct{}{
 
 // Options controls the behaviour of Clone.
 type Options struct {
-	DryRun bool // when true nothing is written to disk
+	DryRun       bool // when true nothing is written to disk
+	NoBookmarks  bool // when true the Bookmarks file is not copied
+	NoHistory    bool // when true the History SQLite database is not copied
+	NoExtensions bool // when true the Extensions directory is not copied
 }
 
 // Result summarises what was (or would be) done.
@@ -119,14 +122,22 @@ type Result struct {
 // Writing the full source Preferences (rather than a minimal stub) prevents
 // Chrome from considering the file malformed and overwriting it with defaults
 // on first launch. Both files are written because Chrome cross-checks them.
-func WritePreferences(srcProfile, dstProfile, displayName string) error {
+//
+// opts is used to determine which categories were cloned so that the
+// Preferences file is patched consistently — e.g. when NoExtensions is set,
+// extensions.settings is written as an empty map without scanning the disk.
+func WritePreferences(srcProfile, dstProfile, displayName string, opts Options) error {
 	// Collect the IDs of extensions that were actually copied to dstProfile.
-	dstExtDir := filepath.Join(dstProfile, "Extensions")
+	// When NoExtensions is set we skip the disk scan — copiedIDs stays empty,
+	// which causes extensions.settings to be written as {} below.
 	copiedIDs := map[string]struct{}{}
-	if entries, err := os.ReadDir(dstExtDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				copiedIDs[e.Name()] = struct{}{}
+	if !opts.NoExtensions {
+		dstExtDir := filepath.Join(dstProfile, "Extensions")
+		if entries, err := os.ReadDir(dstExtDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					copiedIDs[e.Name()] = struct{}{}
+				}
 			}
 		}
 	}
@@ -448,22 +459,48 @@ func Clone(srcProfile, dstProfile string, opts Options) (Result, error) {
 	}
 
 	// ── 1. Bookmarks ─────────────────────────────────────────────────────────
-	if err := copyItem(srcProfile, dstProfile, "Bookmarks", false, opts, &res); err != nil {
-		return res, err
+	if opts.NoBookmarks {
+		if opts.DryRun {
+			fmt.Println("  [dry-run] skipping Bookmarks (--no-bookmarks)")
+		} else {
+			fmt.Println("  Skipped: Bookmarks (--no-bookmarks)")
+		}
+		res.ItemsSkipped++
+	} else {
+		if err := copyItem(srcProfile, dstProfile, "Bookmarks", false, opts, &res); err != nil {
+			return res, err
+		}
 	}
 
 	// ── 2. History (SQLite — hot-copied via VACUUM INTO) ─────────────────────
-	if err := copyItem(srcProfile, dstProfile, "History", false, opts, &res); err != nil {
-		return res, err
+	if opts.NoHistory {
+		if opts.DryRun {
+			fmt.Println("  [dry-run] skipping History (--no-history)")
+		} else {
+			fmt.Println("  Skipped: History (--no-history)")
+		}
+		res.ItemsSkipped++
+	} else {
+		if err := copyItem(srcProfile, dstProfile, "History", false, opts, &res); err != nil {
+			return res, err
+		}
 	}
 
 	// ── 3. Extensions (enabled only) ─────────────────────────────────────────
-	extRes, err := copyEnabledExtensions(srcProfile, dstProfile, opts)
-	if err != nil {
-		return res, err
+	if opts.NoExtensions {
+		if opts.DryRun {
+			fmt.Println("  [dry-run] skipping Extensions (--no-extensions)")
+		} else {
+			fmt.Println("  Skipped: Extensions (--no-extensions)")
+		}
+	} else {
+		extRes, err := copyEnabledExtensions(srcProfile, dstProfile, opts)
+		if err != nil {
+			return res, err
+		}
+		res.ExtensionsCopied = extRes.ExtensionsCopied
+		res.ExtensionsSkipped = extRes.ExtensionsSkipped
 	}
-	res.ExtensionsCopied = extRes.ExtensionsCopied
-	res.ExtensionsSkipped = extRes.ExtensionsSkipped
 
 	return res, nil
 }

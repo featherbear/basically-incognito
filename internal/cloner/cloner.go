@@ -59,11 +59,6 @@ var excludedNames = map[string]struct{}{
 	"Sync Extension Settings": {},
 	"SyncData.sqlite3":        {},
 
-	// verified_contents.json is path-bound (cryptographically tied to the source
-	// profile path) and causes "extension failed to load" errors in a clone.
-	// computed_hashes.json and generated_indexed_rulesets/ must be kept —
-	// Chrome needs them for declarativeNetRequest to work.
-	"verified_contents.json": {},
 
 	// Lock files
 	"SingletonLock":   {},

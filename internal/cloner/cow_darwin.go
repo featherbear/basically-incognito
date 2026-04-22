@@ -4,7 +4,6 @@ package cloner
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -57,12 +56,6 @@ func cloneDir(src, dst string) error {
 		0,
 	)
 	if errno == 0 {
-		// clonefileat copies the entire tree atomically, bypassing our
-		// excludedNames filter. Remove verified_contents.json from every
-		// _metadata/ directory in the clone — it is cryptographically
-		// tied to the source profile path and causes "extension failed to
-		// load" errors in the new profile.
-		removeVerifiedContents(dst)
 		return nil
 	}
 
@@ -80,14 +73,3 @@ func fallbackCloneDir(src, dst string) error {
 
 // removeVerifiedContents walks dst and removes any verified_contents.json
 // files found inside _metadata/ directories.
-func removeVerifiedContents(dst string) {
-	filepath.WalkDir(dst, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() && d.Name() == "verified_contents.json" {
-			os.Remove(path)
-		}
-		return nil
-	})
-}
